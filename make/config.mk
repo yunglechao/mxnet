@@ -70,24 +70,24 @@ USE_TVM_OP = 0
 #---------------------------------------------
 
 # whether use CUDA during compile
-USE_CUDA = 0
+USE_CUDA = 1
 
 # add the path to CUDA library to link and compile flag
 # if you have already add them to environment variable, leave it as NONE
 # USE_CUDA_PATH = /usr/local/cuda
-USE_CUDA_PATH = NONE
+USE_CUDA_PATH = /usr/local/cuda
 
 # whether to enable CUDA runtime compilation
 ENABLE_CUDA_RTC = 1
 
 # whether use CuDNN R3 library
-USE_CUDNN = 0
+USE_CUDNN = 1
 
 # whether to use NVTX when profiling
-USE_NVTX = 0
+USE_NVTX = 1
 
 #whether to use NCCL library
-USE_NCCL = 0
+USE_NCCL = 1
 #add the path to NCCL library
 USE_NCCL_PATH = NONE
 
@@ -101,7 +101,7 @@ USE_OPENCV_INC_PATH = NONE
 USE_OPENCV_LIB_PATH = NONE
 
 #whether use libjpeg-turbo for image decode without OpenCV wrapper
-USE_LIBJPEG_TURBO = 0
+USE_LIBJPEG_TURBO = 1
 #add the path to libjpeg-turbo library
 USE_LIBJPEG_TURBO_PATH = NONE
 
@@ -111,7 +111,7 @@ USE_OPENMP = 1
 # whether use MKL-DNN library: 0 = disabled, 1 = enabled
 # if USE_MKLDNN is not defined, MKL-DNN will be enabled by default on x86 Linux.
 # you can disable it explicity with USE_MKLDNN = 0
-USE_MKLDNN =
+USE_MKLDNN = 0
 
 # whether use NNPACK library
 USE_NNPACK = 0
