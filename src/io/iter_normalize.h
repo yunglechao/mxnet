@@ -145,6 +145,15 @@ class ImageNormalizeIter : public IIterator<DataInst> {
     float illumination =
         rand_uniform(rnd_) * param_.max_random_illumination * 2 - param_.max_random_illumination;
     bool flip = (param_.rand_mirror && coin_flip(rnd_)) || param_.mirror;
+    int zdb_cnt_ = 0;
+    float zdb_mean_[3], zdb_std_[3];
+    zdb_mean_[0] = param_.mean_r;
+    zdb_mean_[1] = param_.mean_g;
+    zdb_mean_[2] = param_.mean_b;
+    zdb_std_[0] = param_.std_r;
+    zdb_std_[1] = param_.std_g;
+    zdb_std_[2] = param_.std_b;
+
 
     // one-liner channel-wise normalization
     switch (data.shape_[0]) {
@@ -205,6 +214,28 @@ class ImageNormalizeIter : public IIterator<DataInst> {
             * param_.scale / param_.std_r;
         }
         break;
+      case 15:
+        //std::cout << " in case 15" << std::endl;
+        assert(!meanfile_ready_ && !flip);
+        for(int i = 0; i < 5; i++) {
+            for(int j = 0; j < 3; j++) {
+               outimg_[zdb_cnt_] = ((data[zdb_cnt_] - zdb_mean_[j]) * contrast + illumination) * param_.scale  / zdb_std_[j];
+               //std::cout << i << " " << j << " " <<  zdb_cnt_ << " " << outimg_[zdb_cnt_] << std::endl;
+               //std::cout << i << " " << j << " " <<  zdb_cnt_ << " " << std::endl;
+               zdb_cnt_ += 1;
+            }
+        }
+        break;
+      case 18:
+        assert(!meanfile_ready_ && !flip);
+        for(int i = 0; i < 6; i++) {
+            for(int j = 0; j < 3; j++) {
+               outimg_[zdb_cnt_] = ((data[zdb_cnt_] - zdb_mean_[j]) * contrast + illumination) * param_.scale  / zdb_std_[j];
+               zdb_cnt_ += 1;
+            }
+        }
+        break;
+
       default:
         LOG(FATAL) << "Expected image channels range 1-4, got " << data.shape_[0];
     }

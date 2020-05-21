@@ -57,8 +57,18 @@ class ImageAugmenter {
    * \param prnd pointer to random number generator.
    * \return The processed image.
    */
-  virtual cv::Mat Process(const cv::Mat &src, std::vector<float> *label,
-                          common::RANDOM_ENGINE *prnd) = 0;
+  // virtual cv::Mat Process(const cv::Mat &src, std::vector<float> *label,
+  //                         common::RANDOM_ENGINE *prnd) = 0;
+  virtual cv::Mat Process(const cv::Mat &src,
+                          common::RANDOM_ENGINE *prnd){
+    std::cout << "Not Implement [Proces]" << std::endl;
+  };
+
+  virtual std::vector<cv::Mat> FaceProcess(const cv::Mat &src, std::vector<float> *label,
+                          common::RANDOM_ENGINE *prnd) {
+    std::cout << "Not Implement [FaceProces]" << std::endl;
+  };
+
   // virtual destructor
   virtual ~ImageAugmenter() {}
   /*!
@@ -102,8 +112,9 @@ struct ImageAugmenterReg
 namespace mxnet {
 namespace io {
 /*! \return the parameter of default augmenter */
-std::vector<dmlc::ParamFieldInfo> ListDefaultAugParams();
+// std::vector<dmlc::ParamFieldInfo> ListDefaultAugParams();
 std::vector<dmlc::ParamFieldInfo> ListDefaultDetAugParams();
+std::vector<dmlc::ParamFieldInfo> ListFaceAugmentParams();
 }  // namespace io
 }  // namespace mxnet
 #endif  // MXNET_IO_IMAGE_AUGMENTER_H_

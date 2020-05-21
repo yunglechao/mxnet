@@ -35,6 +35,11 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdlib>
+
+#if MXNET_USE_LIBJPEG_TURBO
+#include <turbojpeg.h>
+#endif
+
 #include "./image_iter_common.h"
 #include "./inst_vector.h"
 #include "./image_recordio.h"
@@ -47,7 +52,7 @@ namespace mxnet {
 namespace io {
 // parser to parse image recordio
 template<typename DType>
-class ImageRecordIOParser {
+class ImageRecordIOParser0 {
  public:
   // initialize the parser
   inline void Init(const std::vector<std::pair<std::string, std::string> >& kwargs);
@@ -68,6 +73,9 @@ class ImageRecordIOParser {
   #if MXNET_USE_OPENCV
   /*! \brief augmenters */
   std::vector<std::vector<std::unique_ptr<ImageAugmenter> > > augmenters_;
+  #if MXNET_USE_LIBJPEG_TURBO
+  cv::Mat TJimdecode(cv::Mat buf, int color);
+  #endif
   #endif
   /*! \brief random samplers */
   std::vector<std::unique_ptr<common::RANDOM_ENGINE> > prnds_;
@@ -79,8 +87,58 @@ class ImageRecordIOParser {
   mshadow::TensorContainer<cpu, 3> img_;
 };
 
+
+#if MXNET_USE_LIBJPEG_TURBO
+
+bool is_jpeg(unsigned char * file) {
+  if ((file[0] == 255) && (file[1] == 216)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 template<typename DType>
-inline void ImageRecordIOParser<DType>::Init(
+cv::Mat ImageRecordIOParser0<DType>::TJimdecode(cv::Mat image, int color) {
+  unsigned char* jpeg = image.ptr();
+  size_t jpeg_size = image.rows * image.cols;
+
+  if (!is_jpeg(jpeg)) {
+    // If it is not JPEG then fall back to OpenCV
+    return cv::imdecode(image, color);
+  }
+
+  tjhandle handle = tjInitDecompress();
+  int h, w, subsamp;
+  int err = tjDecompressHeader2(handle,
+                                jpeg,
+                                jpeg_size,
+                                &w, &h, &subsamp);
+  if (err != 0) {
+    // If it is a malformed JPEG then fall back to OpenCV
+    return cv::imdecode(image, color);
+  }
+  cv::Mat ret = cv::Mat(h, w, color ? CV_8UC3 : CV_8UC1);
+  err = tjDecompress2(handle,
+                      jpeg,
+                      jpeg_size,
+                      ret.ptr(),
+                      w,
+                      0,
+                      h,
+                      color ? TJPF_BGR : TJPF_GRAY,
+                      0);
+  if (err != 0) {
+    // If it is a malformed JPEG then fall back to OpenCV
+    return cv::imdecode(image, color);
+  }
+  tjDestroy(handle);
+  return ret;
+}
+#endif
+
+template<typename DType>
+inline void ImageRecordIOParser0<DType>::Init(
     const std::vector<std::pair<std::string, std::string> >& kwargs) {
 #if MXNET_USE_OPENCV
   // initialize parameter
@@ -156,7 +214,7 @@ inline void ImageRecordIOParser<DType>::Init(
 }
 
 template<typename DType>
-inline bool ImageRecordIOParser<DType>::
+inline bool ImageRecordIOParser0<DType>::
 ParseNext(std::vector<InstVector<DType>> *out_vec) {
   CHECK(source_ != nullptr);
   dmlc::InputSplit::Blob chunk;
@@ -181,10 +239,18 @@ ParseNext(std::vector<InstVector<DType>> *out_vec) {
       cv::Mat buf(1, rec.content_size, CV_8U, rec.content);
       switch (param_.data_shape[0]) {
        case 1:
-        res = cv::imdecode(buf, 0);
+        if (!param_.load_mode) {
+            res = cv::imdecode(buf, 0);
+        } else {
+            res = cv::imdecode(buf, 1);
+        }
         break;
        case 3:
+#if MXNET_USE_LIBJPEG_TURBO
+        res = TJimdecode(buf, 1);
+#else
         res = cv::imdecode(buf, 1);
+#endif
         break;
        case 4:
         // -1 to keep the number of channel of the encoded image, and not force gray or color.
@@ -196,13 +262,37 @@ ParseNext(std::vector<InstVector<DType>> *out_vec) {
        default:
         LOG(FATAL) << "Invalid output shape " << param_.data_shape;
       }
-      const int n_channels = res.channels();
+
+      // TODO bugs
+      if (res.size().empty()){
+          // This is not an elegant solution.
+          LOG(INFO) << "Image decode failed, create a zero array instead! ";
+          res = cv::Mat::zeros(108, 108, CV_8UC3);
+      }
+            
+      std::vector<float> label_buf;
+      if (this->label_map_ != nullptr) {
+        std::cout << "This is not Implemented" << std::endl;
+        label_buf = label_map_->FindCopy(rec.image_index());
+      } else if (rec.label != NULL) {
+        assert(rec.num_label == 145 or rec.num_label == 146);
+        if (rec.num_label == 145) {
+            label_buf.assign(rec.label, rec.label + rec.num_label);
+        } else if(rec.num_label == 146) {
+            label_buf.assign(rec.label+1, rec.label + rec.num_label);
+        }
+        } else {
+        LOG(FATAL) << "Not enough label packed in img_list or rec file.";
+      }
+      const int n_channels = param_.data_shape[0];
+      std::vector<cv::Mat> face_parts;
+
       for (auto& aug : augmenters_[tid]) {
-        res = aug->Process(res, nullptr, prnds_[tid].get());
+        face_parts = aug->FaceProcess(res, &label_buf, prnds_[tid].get());
       }
       out.Push(static_cast<unsigned>(rec.image_index()),
-               mshadow::Shape3(n_channels, res.rows, res.cols),
-               mshadow::Shape1(param_.label_width));
+               mshadow::Shape3(n_channels * face_parts.size(), face_parts[0].rows, face_parts[0].cols),
+               mshadow::Shape1(1));
 
       mshadow::Tensor<cpu, 3, DType> data = out.data().Back();
 
@@ -213,26 +303,32 @@ ParseNext(std::vector<InstVector<DType>> *out_vec) {
       if (n_channels == 3) swap_indices = {2, 1, 0};
       if (n_channels == 4) swap_indices = {2, 1, 0, 3};
 
-      for (int i = 0; i < res.rows; ++i) {
-        uchar* im_data = res.ptr<uchar>(i);
-        for (int j = 0; j < res.cols; ++j) {
-          for (int k = 0; k < n_channels; ++k) {
-              data[k][i][j] = im_data[swap_indices[k]];
+      for (int n = 0; n < face_parts.size(); ++n) {
+        int pad_k = n * n_channels;
+        for (int i = 0; i < face_parts[0].rows; ++i) {
+          uchar* im_data = face_parts[n].ptr<uchar>(i);
+          for (int j = 0; j < face_parts[0].cols; ++j) {
+            for (int k = 0; k < n_channels; ++k) {
+                data[k+pad_k][i][j] = im_data[swap_indices[k]];
+            }
+            im_data += n_channels;
           }
-          im_data += n_channels;
         }
       }
 
-      mshadow::Tensor<cpu, 1> label = out.label().Back();
+      mshadow::Tensor<cpu, 1, int> label = out.label().Back();
       if (label_map_ != nullptr) {
-        mshadow::Copy(label, label_map_->Find(rec.image_index()));
-      } else if (rec.label != nullptr) {
-        CHECK_EQ(param_.label_width, rec.num_label)
-          << "rec file provide " << rec.num_label << "-dimensional label "
-             "but label_width is set to " << param_.label_width;
-        mshadow::Copy(label, mshadow::Tensor<cpu, 1>(rec.label,
-                                                     mshadow::Shape1(rec.num_label)));
-      } else {
+      } else if (rec.label != NULL) {
+        if (rec.num_label == 146) 
+        {
+            label[0] = int(rec.label[0]) * 1000*10000 + int(rec.label[1]);
+        } 
+        else 
+        {
+            label[0] = int(rec.label[0]);
+        }
+      }
+      else {
         CHECK_EQ(param_.label_width, 1)
           << "label_width must be 1 unless an imglist is provided "
              "or the rec file is packed with multi dimensional label";
@@ -325,7 +421,7 @@ class ImageRecordIter : public IIterator<DataInst> {
   // data
   std::vector<InstVector<DType>> *data_;
   // internal parser
-  ImageRecordIOParser<DType> parser_;
+  ImageRecordIOParser0<DType> parser_;
   // backend thread
   dmlc::ThreadedIter<std::vector<InstVector<DType>> > iter_;
   // parameters
@@ -335,12 +431,8 @@ class ImageRecordIter : public IIterator<DataInst> {
 };
 
 // OLD VERSION - DEPRECATED
-MXNET_REGISTER_IO_ITER(ImageRecordIter_v1)
+MXNET_REGISTER_IO_ITER(ImageRecordIter)
 .describe(R"code(Iterating on image RecordIO files
-
-.. note::
-
-  ``ImageRecordIter_v1`` is deprecated. Use ``ImageRecordIter`` instead.
 
 
 Read images batches from RecordIO files with a rich of data augmentation
@@ -354,7 +446,7 @@ files.
 .add_arguments(ImageRecordParam::__FIELDS__())
 .add_arguments(BatchParam::__FIELDS__())
 .add_arguments(PrefetcherParam::__FIELDS__())
-.add_arguments(ListDefaultAugParams())
+.add_arguments(ListFaceAugmentParams())
 .add_arguments(ImageNormalizeParam::__FIELDS__())
 .set_body([]() {
     return new PrefetcherIter(
@@ -367,9 +459,6 @@ files.
 MXNET_REGISTER_IO_ITER(ImageRecordUInt8Iter_v1)
 .describe(R"code(Iterating on image RecordIO files
 
-.. note::
-
-  ``ImageRecordUInt8Iter_v1`` is deprecated. Use ``ImageRecordUInt8Iter`` instead.
 
 This iterator is identical to ``ImageRecordIter`` except for using ``uint8`` as
 the data type instead of ``float``.
@@ -379,7 +468,7 @@ the data type instead of ``float``.
 .add_arguments(ImageRecordParam::__FIELDS__())
 .add_arguments(BatchParam::__FIELDS__())
 .add_arguments(PrefetcherParam::__FIELDS__())
-.add_arguments(ListDefaultAugParams())
+.add_arguments(ListFaceAugmentParams())
 .set_body([]() {
     return new PrefetcherIter(
         new BatchLoader(

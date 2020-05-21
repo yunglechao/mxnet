@@ -136,7 +136,7 @@ class InstVector {
     return data_;
   }
   /*! \return the label content */
-  inline const TensorVector<1, real_t>& label() const {
+  inline const TensorVector<1, int>& label() const {
     return label_;
   }
 
@@ -146,7 +146,7 @@ class InstVector {
   // label
   TensorVector<3, DType> data_;
   // data
-  TensorVector<1, real_t> label_;
+  TensorVector<1, int> label_;
 };
 
 /*!
