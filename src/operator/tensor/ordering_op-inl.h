@@ -221,7 +221,7 @@ MSHADOW_FORCE_INLINE void TopKSort(const Tensor<cpu, 1, DType>& dat,
     index_t *indices = ind.dptr_+i*N;
     if (is_ascend) {
       if (full_sort) {
-        std::sort(indices, indices+N,
+        std::stable_sort(indices, indices+N,
                   [&](const index_t& i1, const index_t& i2){
           return vals[i1] < vals[i2]; });
       } else {
@@ -231,7 +231,7 @@ MSHADOW_FORCE_INLINE void TopKSort(const Tensor<cpu, 1, DType>& dat,
       }
     } else {
       if (full_sort) {
-        std::sort(indices, indices+N,
+        std::stable_sort(indices, indices+N,
                   [&](const index_t& i1, const index_t& i2){
           return vals[i1] > vals[i2]; });
       } else {
