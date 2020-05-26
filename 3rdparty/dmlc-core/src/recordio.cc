@@ -114,7 +114,26 @@ RecordIOChunkReader::RecordIOChunkReader(InputSplit::Blob chunk,
 bool RecordIOChunkReader::NextRecord(InputSplit::Blob *out_rec) {
   if (pbegin_ >= pend_) return false;
   uint32_t *p = reinterpret_cast<uint32_t *>(pbegin_);
+
+  // add by anxiang
+  // pbegin_ -> char *
+  // pend -> char *
+  if (p[0] != RecordIOWriter::kMagic){
+    LOG(INFO) << "Decode kMagic Error, Find new Record!";
+    for (; pbegin_ + 1 < pend_; ++pbegin_){
+      uint32_t *p_error = reinterpret_cast<uint32_t *>(pbegin_);
+      if (p_error[0] == RecordIOWriter::kMagic){
+        uint32_t cflag = RecordIOWriter::DecodeFlag(p_error[1]);
+        if (cflag == 0 || cflag == 1) {
+          break;
+        }
+      }
+    }
+  }
+  if (pbegin_ >= pend_) return false;
+  p = reinterpret_cast<uint32_t *>(pbegin_);
   CHECK(p[0] == RecordIOWriter::kMagic);
+
   uint32_t cflag = RecordIOWriter::DecodeFlag(p[1]);
   uint32_t clen = RecordIOWriter::DecodeLength(p[1]);
   if (cflag == 0) {
