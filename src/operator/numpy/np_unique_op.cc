@@ -354,6 +354,7 @@ void NumpyUniqueCPUForward(const nnvm::NodeAttrs& attrs,
 DMLC_REGISTER_PARAMETER(NumpyUniqueParam);
 
 NNVM_REGISTER_OP(_npi_unique)
+.add_alias("unique")
 .set_attr_parser(ParamParser<NumpyUniqueParam>)
 .set_num_inputs(1)
 .set_num_outputs([](const NodeAttrs& attrs) {

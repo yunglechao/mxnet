@@ -40,6 +40,7 @@ void _sort<cpu>(float* key, int64_t* data, index_t length) {
 DMLC_REGISTER_PARAMETER(NumpyChoiceParam);
 
 NNVM_REGISTER_OP(_npi_choice)
+.add_alias("choice")
 .describe("random choice")
 .set_num_inputs(
   [](const nnvm::NodeAttrs& attrs) {
